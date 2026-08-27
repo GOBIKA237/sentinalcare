@@ -1,0 +1,55 @@
+/* SentinelCare global styles.
+   Import Fraunces (display), Inter (body), IBM Plex Mono (data) — or self-host
+   these per your org's font policy. */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root {
+  --sc-bg: #F2F5F1;
+  --sc-ink: #2A3B36;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--sc-bg);
+  color: var(--sc-ink);
+  font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, .sc-display {
+  font-family: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.sc-mono {
+  font-family: 'IBM Plex Mono', 'SF Mono', Menlo, monospace;
+}
+
+/* Signature element: a slow, gentle "breathing" pulse on the current-position
+   marker inside the risk capsule. Organic and calm rather than an alert
+   klaxon. Respects reduced-motion preference. */
+@keyframes sc-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.55; }
+  50% { transform: scale(1.6); opacity: 0; }
+}
+
+.sc-breathe-ring {
+  animation: sc-breathe 2.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sc-breathe-ring { animation: none; }
+}
+
+:focus-visible {
+  outline: 2px solid #5B7A6D;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
