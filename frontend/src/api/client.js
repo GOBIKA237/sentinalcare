@@ -1,81 +1,64 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api";
+// Shared API client used by both the welfare-officer/commander dashboard
+// and the other frontend surface. Keep this in sync as new endpoints land.
 
-function getTokens() {
-  return {
-    accessToken: localStorage.getItem("sc_access_token"),
-    refreshToken: localStorage.getItem("sc_refresh_token"),
-  };
+const BASE_URL = process.env.REACT_APP_API_BASE_URL || '/api';
+
+class ApiError extends Error {
+  constructor(message, status, body) {
+    super(message);
+    this.status = status;
+    this.body = body;
+  }
 }
 
-function setTokens({ accessToken, refreshToken }) {
-  if (accessToken) localStorage.setItem("sc_access_token", accessToken);
-  if (refreshToken) localStorage.setItem("sc_refresh_token", refreshToken);
-}
+async function request(path, { method = 'GET', body, params } = {}) {
+  const url = new URL(BASE_URL + path, window.location.origin);
+  if (params) {
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null) url.searchParams.set(k, v);
+    });
+  }
 
-function clearTokens() {
-  localStorage.removeItem("sc_access_token");
-  localStorage.removeItem("sc_refresh_token");
-  localStorage.removeItem("sc_user");
-}
+  const token = localStorage.getItem('sc_auth_token');
 
-async function tryRefresh() {
-  const { refreshToken } = getTokens();
-  if (!refreshToken) return false;
-
-  const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refreshToken }),
+  const res = await fetch(url.toString(), {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
   });
 
-  if (!res.ok) {
-    clearTokens();
-    return false;
-  }
-
-  const data = await res.json();
-  setTokens(data);
-  return true;
-}
-
-/**
- * Central fetch wrapper: attaches the access token, retries once with a
- * refreshed token on a 401, and throws a normal Error with the server's
- * message on any other failure so callers can just try/catch.
- */
-async function request(path, { method = "GET", body, auth = true } = {}) {
-  const doFetch = () => {
-    const { accessToken } = getTokens();
-    const headers = { "Content-Type": "application/json" };
-    if (auth && accessToken) headers.Authorization = `Bearer ${accessToken}`;
-
-    return fetch(`${API_BASE_URL}${path}`, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-  };
-
-  let res = await doFetch();
-
-  if (res.status === 401 && auth) {
-    const refreshed = await tryRefresh();
-    if (refreshed) res = await doFetch();
-  }
+  const isJson = res.headers.get('content-type')?.includes('application/json');
+  const data = isJson ? await res.json() : await res.text();
 
   if (!res.ok) {
-    let message = `Request failed (${res.status})`;
-    try {
-      const data = await res.json();
-      message = data.error || message;
-    } catch {
-      // response wasn't JSON, keep default message
-    }
-    throw new Error(message);
+    throw new ApiError(data?.message || res.statusText, res.status, data);
   }
-
-  if (res.status === 204) return null;
-  return res.json();
+  return data;
 }
 
-export { API_BASE_URL, getTokens, setTokens, clearTokens, request };
+export const api = {
+  login: (username, password) =>
+    request('/auth/login', { method: 'POST', body: { username, password } }),
+
+  logout: () => request('/auth/logout', { method: 'POST' }),
+
+  // Alert queue — existing endpoint. `factors` now returns
+  // { factor, contribution, signal_type }[] per alert.
+  getAlerts: (params) => request('/alerts', { params }),
+
+  acknowledgeAlert: (alertId) =>
+    request(`/alerts/${alertId}/acknowledge`, { method: 'POST' }),
+
+  // New: unit-level anonymized risk-band trend.
+  // Expected response shape:
+  // { unit_id, weeks: [{ week_start, cohort_size, bands: { low, moderate, high } }] }
+  getUnitRiskTrend: (unitId, params) =>
+    request(`/units/${unitId}/risk-trend`, { params }),
+
+  getUnits: () => request('/units'),
+};
+
+export { ApiError };
