@@ -1,29 +1,26 @@
-import React from "react";
+import React from 'react';
+import { color } from '../design/tokens';
 
-export default function Slider({ label, value, onChange, lowLabel, highLabel }) {
+export function Slider({ label, min = 0, max = 100, value, onChange, formatValue }) {
   return (
-    <div className="mb-7">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-medium" style={{ color: "var(--ink)" }}>
-          {label}
-        </span>
-        <span className="text-sm" style={{ color: "var(--sage-deep)", fontFamily: "'IBM Plex Mono', monospace" }}>
-          {value}/5
+    <label style={{ display: 'block', fontSize: 13, color: color.inkMuted }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span>{label}</span>
+        <span className="sc-mono" style={{ color: color.ink }}>
+          {formatValue ? formatValue(value) : value}
         </span>
       </div>
       <input
         type="range"
-        min="1"
-        max="5"
+        min={min}
+        max={max}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full accent-current"
-        style={{ accentColor: "var(--sage)" }}
+        style={{
+          width: '100%',
+          accentColor: color.primary,
+        }}
       />
-      <div className="flex justify-between mt-1.5 text-xs" style={{ color: "var(--ink-soft)" }}>
-        <span>{lowLabel}</span>
-        <span>{highLabel}</span>
-      </div>
-    </div>
+    </label>
   );
 }
