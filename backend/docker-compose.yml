@@ -1,0 +1,79 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PGUSER:-sentinelcare}
+      POSTGRES_PASSWORD: ${PGPASSWORD:-changeme_use_a_strong_password}
+      POSTGRES_DB: ${PGDATABASE:-sentinelcare}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-sentinelcare}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-sentinelcare_admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-changeme_minio_password}
+    volumes:
+      - minio-data:/data
+    ports:
+      - "9000:9000" # API
+      - "9001:9001" # Console
+
+  # Placeholder for Backend Dev 2's FastAPI risk-scoring service.
+  # Swap the `build` context / image once that repo exists; the Node API
+  # calls it internally at http://ml-service:8000.
+  ml-service:
+    build:
+      context: ../sentinelcare-ml-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - PORT=8000
+    ports:
+      - "8000:8000"
+    profiles: ["with-ml"] # `docker compose --profile with-ml up` once that repo exists
+
+  node-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PGHOST: postgres
+      # ML_SERVICE_URL is what Backend Dev 3's alert engine / any risk-score
+      # write path should call: http://ml-service:8000
+      ML_SERVICE_URL: http://ml-service:8000
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - node-api
+    ports:
+      - "80:80"
+
+volumes:
+  pgdata:
+  minio-data:
