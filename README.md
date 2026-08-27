@@ -1,116 +1,78 @@
-# SentinelCare — Full Stack (Backend + Frontend)
+# SentinelCare — frontend 2 (welfare officer / commander dashboard)
 
-SIH26186 — NEXAGEN. This is a working, testable slice of the app: login,
-daily check-in, personal wellbeing trend, and a welfare-officer alert queue.
-No ML teammate needed to test it — a simple explainable placeholder scorer
-is wired into the backend so risk scores actually populate (see
-`backend/src/services/riskScore.service.js`; swap it for the real ML service
-call later, the seam is already there).
+Scaffolded from the project spec since the real `AlertsPage.jsx` and shared
+component files weren't available to paste in. Structure and naming follow
+the spec closely so it should be straightforward to merge with your actual
+codebase — treat this as a strong starting point to diff against, not a
+drop-in replacement.
 
-## 0. Prerequisites
-
-- Node.js 18+ and npm
-- Docker + Docker Compose (for Postgres — easiest path) OR a local Postgres 16 install
-
-## 1. Start the database
-
-From `backend/`:
-
-```bash
-cd backend
-cp .env.example .env
-```
-
-Open `.env` and set real values for:
-- `JWT_ACCESS_SECRET` — generate with `openssl rand -hex 32`
-- `JWT_REFRESH_SECRET` — generate a *different* one the same way
-- `CHECKIN_ENCRYPTION_KEY` — generate with `openssl rand -base64 32`
-
-Then start Postgres (and MinIO, though nothing uses it yet):
-
-```bash
-docker compose up -d postgres minio
-```
-
-## 2. Run the backend
-
-```bash
-npm install
-npm run migrate    # creates all tables
-npm run seed       # creates 3 test accounts (see below)
-npm run dev         # starts API on http://localhost:4000
-```
-
-Confirm it's up: `curl http://localhost:4000/api/health` → `{"status":"ok"}`
-
-### Test accounts (created by `npm run seed`)
-
-| Service number | Password      | Role            |
-|-----------------|--------------|-----------------|
-| `soldier1`      | Password123! | soldier         |
-| `welfare1`      | Password123! | welfare_officer |
-| `admin1`        | Password123! | admin           |
-
-## 3. Run the frontend
-
-In a second terminal:
-
-```bash
-cd frontend
-cp .env.example .env
-npm install
-npm run dev          # starts on http://localhost:5173
-```
-
-Open http://localhost:5173, log in as `soldier1` to log a check-in and see
-your trend, or as `welfare1` to see the alert queue populate once a couple
-of check-ins have pushed someone into "moderate" or "high" risk.
-
-## 4. What to actually test end-to-end
-
-1. Log in as `soldier1` → submit a check-in with low mood/sleep and high
-   workload a few times in a row (edit and resubmit — there's no "one per
-   day" lock in this build, intentionally, so you can generate a trend fast
-   for a demo).
-2. Log in as `welfare1` → the alert queue should show `soldier1` once their
-   rolling risk score crosses into "moderate" or "high".
-3. Log in as `soldier1` again → the "My wellbeing" tab should show the
-   trend chart and the latest risk band.
-
-## What's real vs. placeholder right now
-
-**Real:** auth (JWT + refresh rotation), RBAC, Postgres schema, encrypted
-check-in notes at rest, audit logging on cross-user reads, the full
-check-in → risk-score → alert-queue pipeline, and a working React frontend
-wired to all of it.
-
-**Placeholder, flagged clearly in code comments:**
-- `backend/src/services/riskScore.service.js` — simple weighted-average
-  heuristic standing in for Backend Dev 2's scikit-learn service. Swap the
-  function body for an HTTP call to `ML_SERVICE_URL` when that's ready.
-- The `escalations` table exists in the schema but the actual "welfare
-  officer requests to see a raw note, admin approves, note gets decrypted"
-  workflow isn't wired to any routes yet.
-- No HRMS ingestion (leave/deployment data) — Backend Dev 3's piece.
-- No mobile (React Native) app — this frontend is the web version only,
-  useful for both the personnel check-in flow and the officer dashboard for
-  now; split mobile off from `frontend/src/pages/CheckInPage.jsx` later if
-  time allows.
-
-## Folder structure
+## Structure
 
 ```
-sentinelcare-project/
-├── backend/    Node.js + Express + PostgreSQL API (see backend/README.md)
-└── frontend/   React + Vite + Tailwind web app
+src/
+  design/
+    tokens.js       — colors, type, radii, MIN_COHORT_SIZE
+    global.css       — fonts, resets, the "breathing ring" animation
+  components/
+    Badge.jsx         — Badge, SignalBadge, SignalBadgeRow
+    Card.jsx
+    Button.jsx
+    Slider.jsx
+    RiskCapsule.jsx   — signature risk-band element (alert cards + trend legend)
+    PrivacyBanner.jsx — shared reassurance banner pattern
+  api/
+    client.js         — shared API client (login, alerts, unit trend)
+  pages/
+    LoginScreen.jsx
+    AlertsPage.jsx     — extended with per-alert signal_type badges
+    TrendView.jsx       — new anonymized unit-level risk trend chart
+  App.jsx              — tab shell wiring it together
 ```
 
-## If something doesn't start
+## What's implemented
 
-- **`ECONNREFUSED` on the backend** → Postgres isn't up yet; check
-  `docker compose ps` and give it a few seconds after `docker compose up -d`.
-- **Frontend shows network errors** → confirm `VITE_API_BASE_URL` in
-  `frontend/.env` matches where the backend is actually running
-  (`http://localhost:4000/api` by default).
-- **Login fails for the seed accounts** → make sure `npm run seed` actually
-  ran against the same database the API is pointed at (same `.env`).
+1. **Signal badges** — `SignalBadgeRow` reads an alert's `factors` array and
+   renders one small badge per distinct `signal_type` present
+   (organizational / survey / behavioral / chat), in a fixed order so rows
+   don't reflow. Colors are centralized in `tokens.js` under `signalMeta`.
+
+2. **Unit trend view** — `TrendView.jsx` expects
+   `GET /units/:id/risk-trend` to return:
+   ```json
+   {
+     "unit_id": "...",
+     "weeks": [
+       { "week_start": "2026-08-03", "cohort_size": 14,
+         "bands": { "low": 9, "moderate": 4, "high": 1 } }
+     ]
+   }
+   ```
+   Only counts per band are used — no personnel identifiers ever reach this
+   component.
+
+3. **Visual tone** — calm sage/slate palette, muted (non-siren) risk colors,
+   Fraunces for headers to keep it feeling human rather than clinical.
+
+## Anonymization safeguard (please review with your privacy/legal team)
+
+`MIN_COHORT_SIZE` in `tokens.js` (default `5`) is a client-side floor: any
+week where `cohort_size` is below that threshold is rendered as
+**suppressed** rather than plotted, because a band breakdown for a very
+small group (e.g. "1 of 3 people is high risk") can effectively identify an
+individual even without a name attached.
+
+This is a UI-level safeguard only — it doesn't stop the API from returning
+small-cohort data, and the true minimum cohort size (and whether it should
+vary by context) is a policy decision, not a coding one. I'd suggest
+enforcing the same threshold server-side too, so a differently-built client
+can't bypass it.
+
+## Also worth deciding with your team, not just engineering
+
+- What exactly "chat" signal means to the personnel it's collected from,
+  and whether they know it's a factor — the badge tooltip currently says
+  "reflects check-in patterns, never message content," but that's only
+  true if that's actually how the signal is computed.
+- Who can see the unsuppressed, per-alert factor breakdown vs. only the
+  aggregated trend — right now both views are gated by the same login,
+  with no role distinction between welfare staff and command.
